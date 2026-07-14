@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WB - stock by supply batch (prototype)</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/3.31.0/tabler-icons.min.css">
+<style>
+  :root{
+    --surface-0:#f7f6f2; --surface-1:#f1efe8; --surface-2:#ffffff;
+    --text-primary:#2c2c2a; --text-secondary:#5f5e5a; --text-muted:#888780;
+    --border:rgba(0,0,0,.12); --radius:8px;
+    --bg-danger:#fcebeb; --text-danger:#a32d2d;
+    --bg-success:#eaf3de; --text-success:#3b6d11;
+    --bg-warning:#faeeda; --text-warning:#854f0b;
+    --font-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --surface-0:#1c1c1a; --surface-1:#2c2c2a; --surface-2:#242422;
+      --text-primary:#f1efe8; --text-secondary:#b4b2a9; --text-muted:#888780;
+      --border:rgba(255,255,255,.14);
+      --bg-danger:#501313; --text-danger:#f09595;
+      --bg-success:#173404; --text-success:#97c459;
+      --bg-warning:#412402; --text-warning:#ef9f27;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--surface-0); color:var(--text-primary);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    line-height:1.6; -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1000px; margin:0 auto; padding:2rem 1.25rem;}
+  h1{margin:0; font-size:22px; font-weight:500;}
+  .sub{margin:0 0 1.25rem; font-size:14px; color:var(--text-secondary);}
+  .kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:12px; margin-bottom:1.25rem;}
+  .kpi{background:var(--surface-1); border-radius:var(--radius); padding:1rem;}
+  .kpi .lbl{font-size:13px; color:var(--text-secondary);}
+  .kpi .val{font-size:24px; font-weight:500;}
+  .controls{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px;}
+  .controls label{font-size:13px; color:var(--text-secondary);}
+  input[type=range]{flex:1; min-width:140px; accent-color:var(--text-secondary);}
+  .scroll{overflow-x:auto; border:.5px solid var(--border); border-radius:12px; background:var(--surface-2);}
+  table{width:100%; border-collapse:collapse; font-size:12px; min-width:920px;}
+  th{padding:9px 10px; font-weight:500; text-align:left; background:var(--surface-1); white-space:nowrap;}
+  td{padding:8px 10px; border-top:.5px solid var(--border); white-space:nowrap;}
+  .r{text-align:right}
+  .pill{display:inline-block; padding:2px 10px; border-radius:20px; font-size:12px;}
+  .note{display:flex; gap:10px; align-items:flex-start; margin-top:1rem; padding:12px 14px;
+    background:var(--bg-warning); border-radius:12px; font-size:13px; color:var(--text-warning);}
+  .badge{background:var(--bg-danger);}
+  .badge .lbl,.badge .val{color:var(--text-danger);}
+  .foot{margin-top:1.5rem; font-size:12px; color:var(--text-muted); line-height:1.7;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div style="display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+    <h1>Stock by supply batch</h1>
+    <span style="font-size:13px; color:var(--text-muted);"><i class="ti ti-calendar"></i> from 2024-04-15 · FBO model</span>
+  </div>
+  <p class="sub">Received vs. sold per supply number. Batches with no sales beyond the threshold are flagged as stale.</p>
+
+  <div class="kpis">
+    <div class="kpi"><div class="lbl">Batches</div><div class="val">3</div></div>
+    <div class="kpi"><div class="lbl">Received</div><div class="val">650</div></div>
+    <div class="kpi"><div class="lbl">Sold net</div><div class="val">456</div></div>
+    <div class="kpi"><div class="lbl">In stock</div><div class="val">194</div></div>
+    <div class="kpi badge"><div class="lbl">Stale</div><div class="val" id="staleKpi">1</div></div>
+  </div>
+
+  <div class="controls">
+    <label>Stale threshold</label>
+    <input type="range" min="7" max="90" value="30" step="1" id="thr">
+    <span style="font-size:13px; font-weight:500; min-width:64px;" id="thrOut">30 days</span>
+  </div>
+
+  <div class="scroll">
+    <table>
+      <thead><tr>
+        <th>Supply (income_id)</th><th>Close date</th><th>Supplier article</th><th>WB article (nm_id)</th>
+        <th>Size</th><th>Warehouse</th><th class="r">Received</th><th class="r">Sold net</th>
+        <th class="r">Returns</th><th class="r">Stock (calc)</th><th>Last sale</th>
+        <th class="r">Days no sales</th><th class="r">Velocity /day</th><th>Status</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <i class="ti ti-alert-triangle" style="font-size:18px; margin-top:1px;"></i>
+    <div><span style="font-weight:500;">Stock reconciliation:</span> for WB article 178 the derived stock is 14 vs. 17 reported in WB Stocks — gap −3. Some sales may carry no supply number.</div>
+  </div>
+
+  <p class="foot">Prototype on synthetic data. Not wired to the WB API and not computing live — it shows the layout and the status logic. Stock (calc) = received − sold net; the API has no per-batch stock.</p>
+</div>
+
+<script>
+(function(){
+  var data = [
+    {inc:"12345", close:"2024-06-01", art:"ABC-01", nm:"178…", size:"M", wh:"Koledino", rec:200, sold:186, ret:4, stock:14, last:"2024-08-20", days:61, vel:1.1},
+    {inc:"12345", close:"2024-06-01", art:"ABC-01", nm:"178…", size:"L", wh:"Koledino", rec:150, sold:150, ret:6, stock:0,  last:"2024-09-30", days:12, vel:1.4},
+    {inc:"12801", close:"2024-07-15", art:"XYZ-09", nm:"190…", size:"44", wh:"Tula",     rec:300, sold:120, ret:2, stock:180,last:"2024-10-05", days:6,  vel:0.9}
+  ];
+  var fill = {"Stale":"var(--bg-danger)","Active":"var(--bg-success)","Sold out":"var(--surface-1)"};
+  var fg   = {"Stale":"var(--text-danger)","Active":"var(--text-success)","Sold out":"var(--text-muted)"};
+
+  function statusOf(r, thr){
+    if(r.stock <= 0) return "Sold out";
+    if(r.days > thr) return "Stale";
+    return "Active";
+  }
+  function render(thr){
+    var tb = document.getElementById("rows"); tb.innerHTML = ""; var stale = 0;
+    data.forEach(function(r){
+      var st = statusOf(r, thr); if(st === "Stale") stale++;
+      var tr = document.createElement("tr");
+      tr.innerHTML =
+        '<td style="font-family:var(--font-mono);">'+r.inc+'</td>'+
+        '<td>'+r.close+'</td><td>'+r.art+'</td>'+
+        '<td style="font-family:var(--font-mono);">'+r.nm+'</td>'+
+        '<td>'+r.size+'</td><td>'+r.wh+'</td>'+
+        '<td class="r">'+r.rec+'</td><td class="r">'+r.sold+'</td>'+
+        '<td class="r">'+r.ret+'</td><td class="r" style="font-weight:500;">'+r.stock+'</td>'+
+        '<td>'+r.last+'</td><td class="r">'+r.days+'</td><td class="r">'+r.vel.toFixed(1)+'</td>'+
+        '<td><span class="pill" style="background:'+fill[st]+'; color:'+fg[st]+';">'+st+'</span></td>';
+      tb.appendChild(tr);
+    });
+    document.getElementById("staleKpi").textContent = stale;
+  }
+  var thr = document.getElementById("thr"), out = document.getElementById("thrOut");
+  thr.addEventListener("input", function(){
+    out.textContent = thr.value + " days";
+    render(parseInt(thr.value, 10));
+  });
+  render(30);
+})();
+</script>
+</body>
+</html>
